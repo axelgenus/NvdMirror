@@ -7,6 +7,7 @@
         <InvariantGlobalization>true</InvariantGlobalization>
         <PublishAot>true</PublishAot>
         <RootNamespace>Nist.Vulnerability.Mirror</RootNamespace>
+        <UserSecretsId>34a7d1da-bb10-4465-96af-4703af399c08</UserSecretsId>
     </PropertyGroup>
 
     <ItemGroup>
