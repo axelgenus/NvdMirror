@@ -5,7 +5,7 @@ using Nist.Vulnerability.Mirror.Settings;
 
 namespace Nist.Vulnerability.Mirror.Services;
 
-public class NistCveFetcher(
+public partial class NistCveFetcher(
     ILogger<NistCveFetcher> logger,
     IOptions<AppSettings> options,
     TimeProvider timeProvider,
@@ -13,6 +13,63 @@ public class NistCveFetcher(
 {
     private static readonly TimeSpan Warmup = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan Cooldown = TimeSpan.FromHours(2);
+
+    [LoggerMessage(LogLevel.Information, "Failed downloading metadata (feed {name}).")]
+    private partial void LogFailedDownloadingMeta(string name);
+
+    [LoggerMessage(LogLevel.Information, "No changes detected (feed {name}).")]
+    private partial void LogNoChangesDetected(string name);
+
+    [LoggerMessage(LogLevel.Warning, "Failed definitions validation  (feed {name}).")]
+    private partial void LogFailedDefinitionsValidation(string name);
+
+    private async Task FetchFeed(string name, CancellationToken cancellationToken)
+    {
+        var metaUrl = $"nvdcve-2.0-{name}.meta";
+        string metaPath = Path.Combine(options.Value.RootPath, metaUrl);
+
+        var defUrl = $"nvdcve-2.0-{name}.json.gz";
+        string defPath = Path.Combine(options.Value.RootPath, defUrl);
+
+        try
+        {
+            FeedMeta? existingMeta = await FeedMeta.LoadAsync(metaPath, cancellationToken);
+
+            await client.DownloadMeta(metaUrl, metaPath, cancellationToken);
+
+            FeedMeta? updatedMeta = await FeedMeta.LoadAsync(metaPath, cancellationToken);
+            if (updatedMeta is null)
+            {
+                LogFailedDownloadingMeta(name);
+
+                return;
+            }
+
+            if (existingMeta is not null && existingMeta.CompareTo(updatedMeta) <= 0)
+            {
+                LogNoChangesDetected(name);
+
+                return;
+            }
+
+            await client.DownloadGzip(defUrl, defPath, cancellationToken);
+
+            if (!await updatedMeta.ValidateAsync(defPath, cancellationToken))
+            {
+                LogFailedDefinitionsValidation(name);
+
+                //File.Delete(defPath);
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            logger.LogWarning("Fetching feed {name} has been cancelled.", name);
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Failed fetching year {name}", name);
+        }
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -24,48 +81,14 @@ public class NistCveFetcher(
         {
             DateTimeOffset now = timeProvider.GetUtcNow();
 
-            for (int year = startYear; year < now.Year; year++)
+            for (int year = startYear; year <= now.Year; year++)
             {
-                await FetchFeed(year, stoppingToken);
+                await FetchFeed($"{year}", stoppingToken);
             }
+
+            await FetchFeed("modified", stoppingToken);
 
             await Task.Delay(Cooldown, stoppingToken);
-        }
-    }
-
-    private async Task FetchFeed(int year, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var metaUrl = $"nvdcve-2.0-{year}.meta";
-            string metaPath = Path.Combine(options.Value.RootPath, metaUrl);
-
-            FeedMeta? meta = await client.DownloadMeta(metaUrl, metaPath, cancellationToken);
-            if (meta is null)
-            {
-                logger.LogWarning("Failed downloading {URL}.", metaUrl);
-
-                return;
-            }
-
-            logger.LogInformation("Successfully downloaded {URL}", metaUrl);
-
-            var defUrl = $"nvdcve-2.0-{year}.json.gz";
-            string defPath = Path.Combine(options.Value.RootPath, defUrl);
-
-            bool result = await client.DownloadGzip(defUrl, defPath, meta, cancellationToken);
-            if (!result)
-            {
-                logger.LogWarning("Failed downloading {URL}.", defUrl);
-
-                return;
-            }
-
-            logger.LogInformation("Successfully downloaded {URL}", defUrl);
-        }
-        catch (Exception exception)
-        {
-            logger.LogError(exception, "Failed fetching year {YEAR}", year);
         }
     }
 }
