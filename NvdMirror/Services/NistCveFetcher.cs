@@ -11,8 +11,11 @@ public partial class NistCveFetcher(
     TimeProvider timeProvider,
     NistCveFeedClient client) : BackgroundService
 {
-    private static readonly TimeSpan Warmup = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan Cooldown = TimeSpan.FromHours(2);
+    private const int StartYear = 2002;
+
+    private static readonly TimeSpan UpdatePeriod = TimeSpan.FromHours(2);
+
+    private readonly PeriodicTimer _timer = new(UpdatePeriod, timeProvider);
 
     [LoggerMessage(LogLevel.Information, "Failed downloading metadata (feed {name}).")]
     private partial void LogFailedDownloadingMeta(string name);
@@ -73,22 +76,18 @@ public partial class NistCveFetcher(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        const int startYear = 2002;
-
-        await Task.Delay(Warmup, stoppingToken);
-
-        while (!stoppingToken.IsCancellationRequested)
+        while (await _timer.WaitForNextTickAsync(stoppingToken))
         {
             DateTimeOffset now = timeProvider.GetUtcNow();
 
-            for (int year = startYear; year <= now.Year; year++)
+            for (int year = StartYear; year <= now.Year; year++)
             {
                 await FetchFeed($"{year}", stoppingToken);
             }
 
             await FetchFeed("modified", stoppingToken);
 
-            await Task.Delay(Cooldown, stoppingToken);
+            await Task.Delay(UpdatePeriod, stoppingToken);
         }
     }
 }
