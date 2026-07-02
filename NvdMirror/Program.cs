@@ -1,10 +1,13 @@
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Nist.Vulnerability.Mirror.Http;
 using Nist.Vulnerability.Mirror.Services;
 using Nist.Vulnerability.Mirror.Settings;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSystemd();
 
 string? rootPath = builder.Configuration["RootPath"] ?? Path.GetTempPath();
 

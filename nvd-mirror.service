@@ -1,0 +1,46 @@
+[Unit]
+Description=NVD (NIST) CVE Feed Mirror
+Documentation=https://nvd.nist.gov/feeds/json/cve/2.0
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+
+# Path to the self-contained NativeAOT-published executable.
+# Adjust if you publish to a different location.
+WorkingDirectory=/opt/NvdMirror
+ExecStart=/opt/NvdMirror/NvdMirror
+
+# Run as an unprivileged service user/group.
+User=nvd
+Group=nvd
+
+# Restart policy.
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+
+# Environment configuration.
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://+:8080
+# Directory where the mirrored feeds are stored and served from.
+Environment=RootPath=/var/opt/NvdMirror
+
+# Sandboxing / hardening.
+LockPersonality=true
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/opt/NvdMirror
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+
+# Logging.
+SyslogIdentifier=NvdMirror
+
+[Install]
+WantedBy=multi-user.target
